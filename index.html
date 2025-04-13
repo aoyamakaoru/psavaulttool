@@ -1,0 +1,226 @@
+
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>PSA vault利益計算ツール</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+    }
+    label, input, select, textarea {
+      display: block;
+      margin: 10px 0;
+      width: 100%;
+    }
+    button {
+      padding: 10px;
+      font-size: 16px;
+    }
+    .output {
+      margin-top: 20px;
+      background: #f7f7f7;
+      padding: 15px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+    }
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .info-icon {
+      background-color: #ccc;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      text-align: center;
+      font-size: 14px;
+      line-height: 20px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    /* モーダル */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 999;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.5);
+    }
+
+    .modal-content {
+      background-color: #fff;
+      margin: 10% auto;
+      padding: 20px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 400px;
+    }
+
+    .close {
+      color: #aaa;
+      float: right;
+      font-size: 24px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .close:hover {
+      color: #000;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    textarea {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="title">
+    <h2 style="margin: 0;">PSA vault利益計算ツール</h2>
+    <div class="info-icon" onclick="showModal()">？</div>
+  </div>
+
+  <label for="currency">通貨の種類:</label>
+  <select id="currency">
+    <option value="usd">ドル (USD)</option>
+    <option value="jpy">円 (JPY)</option>
+  </select>
+
+  <label for="rate">為替レート（1ドル＝何円）:</label>
+  <input type="number" id="rate" placeholder="例: 150" step="0.01">
+
+  <label for="amounts">金額を入力（複数OK）:</label>
+  <div class="input-row">
+    <textarea id="amounts" rows="3" placeholder="例: 50+150 600, 1200"></textarea>
+    <button onclick="resetFields()">リセット</button>
+  </div>
+
+  <button onclick="calculate()">計算</button>
+
+  <div class="output" id="result"></div>
+
+  <!-- モーダル -->
+  <div id="infoModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal()">&times;</span>
+      <h3>手数料ルール</h3>
+      <p>
+        ・100ドル未満：13% ＋ $3<br>
+        ・100ドル以上～499ドル：13%<br>
+        ・500ドル以上～999ドル：12%<br>
+        ・1000ドル以上～2499ドル：10%<br>
+        ・2500ドル以上～4999ドル：9%<br>
+        ・5000ドル以上：7%<br><br>
+        ※日本円入力時はドル換算後に上記ルールを適用
+      </p>
+    </div>
+  </div>
+
+  <script>
+    function showModal() {
+      document.getElementById("infoModal").style.display = "block";
+    }
+
+    function closeModal() {
+      document.getElementById("infoModal").style.display = "none";
+    }
+
+    window.onclick = function(event) {
+      const modal = document.getElementById("infoModal");
+      if (event.target === modal) {
+        closeModal();
+      }
+    };
+
+    function resetFields() {
+      document.getElementById("amounts").value = '';
+      document.getElementById("result").innerHTML = '';
+    }
+
+    function calculate() {
+      const currency = document.getElementById("currency").value;
+      const rate = parseFloat(document.getElementById("rate").value);
+      const input = document.getElementById("amounts").value;
+      const resultDiv = document.getElementById("result");
+
+      if (isNaN(rate) || !input.trim()) {
+        resultDiv.innerHTML = "為替レートと金額を正しく入力してください。";
+        return;
+      }
+
+      const values = input
+        .replace(/[\u3000,＋+]/g, ' ')
+        .split(' ')
+        .map(v => parseFloat(v))
+        .filter(v => !isNaN(v));
+
+      if (values.length === 0) {
+        resultDiv.innerHTML = "有効な数値が見つかりませんでした。";
+        return;
+      }
+
+      let totalAmount = 0, totalFee = 0, totalProfit = 0;
+      let output = "<strong>個別計算結果:</strong>\n";
+
+      values.forEach((amount, i) => {
+        let usdAmount = currency === "jpy" ? amount / rate : amount;
+
+        let feePercent = 0;
+        let extraFee = 0;
+
+        if (usdAmount < 100) {
+          feePercent = 0.13;
+          extraFee = 3;
+        } else if (usdAmount < 500) {
+          feePercent = 0.13;
+        } else if (usdAmount < 1000) {
+          feePercent = 0.12;
+        } else if (usdAmount < 2500) {
+          feePercent = 0.10;
+        } else if (usdAmount < 5000) {
+          feePercent = 0.09;
+        } else {
+          feePercent = 0.07;
+        }
+
+        const fee = usdAmount * feePercent + extraFee;
+        const profit = usdAmount - fee;
+
+        const feeJpy = fee * rate;
+        const profitJpy = profit * rate;
+
+        const unit = currency === "jpy" ? "円" : "ドル";
+
+        output += `【No.${i + 1}】 ${amount} ${unit}\n`;
+        output += `  手数料: ${fee.toFixed(2)} ドル (${feeJpy.toFixed(2)} 円)\n`;
+        output += `  利益: ${profit.toFixed(2)} ドル (${profitJpy.toFixed(2)} 円)\n\n`;
+
+        totalAmount += usdAmount;
+        totalFee += fee;
+        totalProfit += profit;
+      });
+
+      output += `<strong>合計:</strong>\n`;
+      output += `  合計金額: ${totalAmount.toFixed(2)} ドル (${(totalAmount * rate).toFixed(2)} 円)\n`;
+      output += `  合計手数料: ${totalFee.toFixed(2)} ドル (${(totalFee * rate).toFixed(2)} 円)\n`;
+      output += `  合計利益: ${totalProfit.toFixed(2)} ドル (${(totalProfit * rate).toFixed(2)} 円)`;
+
+      resultDiv.innerHTML = output;
+    }
+  </script>
+</body>
+</html>
